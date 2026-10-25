@@ -5,6 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="DataCheck: analiza la calidad de tus archivos CSV directamente en el navegador." />
   <title>DataCheck | Validador de calidad CSV</title>
+  <meta name="theme-color" content="#f4f7fc" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0b1322" media="(prefers-color-scheme: dark)" />
+  <script>
+    // Aplica el tema guardado (o el preferido del sistema) antes del primer
+    // pintado para que no haya parpadeo claro/oscuro al cargar la página.
+    // El acceso a localStorage va aislado: si el navegador lo bloquea, el
+    // respaldo del sistema debe poder calcularse igual.
+    var savedTheme = null;
+    try { savedTheme = localStorage.getItem('datacheck-theme'); } catch (e) { savedTheme = null; }
+    if (savedTheme !== 'dark' && savedTheme !== 'light') {
+      try { savedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; }
+      catch (e) { savedTheme = 'light'; }
+    }
+    document.documentElement.dataset.theme = savedTheme;
+  </script>
   <link rel="stylesheet" href="./styles.css" />
   <script type="module" src="./src/app.js"></script>
 </head>
@@ -15,7 +30,10 @@
         <span class="brand-mark" aria-hidden="true">D<span>✓</span></span>
         <span>DataCheck <small>CSV ANALYTICS</small></span>
       </a>
-      <span class="top-pill"><span class="pulse"></span> 100 % en tu navegador</span>
+      <div class="topbar-actions">
+        <span class="top-pill"><span class="pulse"></span> 100 % en tu navegador</span>
+        <button id="themeToggle" type="button" class="theme-toggle" aria-label="Cambiar a tema oscuro" title="Cambiar tema claro/oscuro">🌙</button>
+      </div>
     </div>
   </header>
 
@@ -36,7 +54,7 @@
       <div class="section-top">
         <div><span class="section-index">01 / IMPORTACIÓN</span><h2 id="upload-title">Carga tu archivo</h2><p>Archivos .csv, máximo 5 MB. Se reconocen separadores coma, punto y coma y tabulación.</p></div>
       </div>
-      <div id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Seleccionar o arrastrar un archivo CSV">
+      <div id="dropZone" class="dropzone">
         <div class="upload-icon" aria-hidden="true">↑</div>
         <strong>Arrastra tu archivo CSV aquí</strong>
         <span>o selecciónalo desde tu equipo</span>
@@ -51,20 +69,61 @@
     </section>
 
     <section class="results" aria-labelledby="result-title">
-      <div class="section-top results-heading"><div><span class="section-index">02 / DIAGNÓSTICO</span><h2 id="result-title">Resumen de calidad</h2></div><button id="exportBtn" type="button" class="button button-primary" disabled>↓ Descargar informe CSV</button></div>
+      <div class="section-top results-heading"><div><span class="section-index">02 / DIAGNÓSTICO</span><h2 id="result-title">Resumen de calidad</h2></div><div class="actions"><button id="cleanBtn" type="button" class="button button-secondary" disabled>↓ CSV limpio</button><button id="cleanOptionsBtn" type="button" class="button button-ghost" aria-expanded="false">Opciones de limpieza</button><button id="exportBtn" type="button" class="button button-primary" disabled>↓ Descargar informe CSV</button><button id="exportJsonBtn" type="button" class="button button-ghost" disabled>↓ Informe JSON</button></div></div>
+      <div id="cleanOptions" class="clean-options" hidden>
+        <label><input type="checkbox" id="optEmptyRows" /> Quitar registros totalmente vacíos</label>
+        <label><input type="checkbox" id="optPlaceholders" /> Convertir pseudo-vacíos («N/A», «null»…) en celdas vacías</label>
+        <label><input type="checkbox" id="optDatesIso" /> Normalizar fechas a AAAA-MM-DD</label>
+        <label><input type="checkbox" id="optNearDup" /> Quitar también las casi duplicadas</label>
+        <span class="clean-note">Las duplicadas exactas siempre se quitan y los espacios en los bordes ya se recortan al analizar.</span>
+      </div>
       <div class="stats">
         <article class="stat-card"><span>Registros analizados</span><strong id="statRows">—</strong><small>Total de filas de datos</small></article>
         <article class="stat-card"><span>Columnas</span><strong id="statCols">—</strong><small>Campos detectados</small></article>
         <article class="stat-card amber"><span>Celdas vacías</span><strong id="statBlanks">—</strong><small id="statBlanksSub">Pendiente de análisis</small></article>
         <article class="stat-card coral"><span>Filas duplicadas</span><strong id="statDuplicates">—</strong><small>Repetidas después de la primera</small></article>
       </div>
-      <div id="insight" class="insight" hidden><div class="insight-icon">i</div><p id="insightText"></p></div>
+      <div id="insight" class="insight" hidden><div class="insight-icon" id="insightIcon">i</div><p id="insightText"></p></div>
     </section>
 
     <div class="details-grid">
-      <section class="panel" aria-labelledby="columns-title"><div class="panel-heading"><div><span class="section-index">03 / COMPLETITUD</span><h2 id="columns-title">Calidad por columna</h2></div></div><div id="columnsList" class="columns-list"><p class="empty-state">Importa un archivo para visualizar el porcentaje de datos completos por columna.</p></div></section>
-      <section class="panel" aria-labelledby="preview-title"><div class="panel-heading"><div><span class="section-index">04 / REVISIÓN</span><h2 id="preview-title">Vista previa</h2></div><span id="previewCount" class="preview-count">Sin datos</span></div><div class="filters" role="group" aria-label="Filtrar registros"><button class="filter active" type="button" data-filter="all" aria-pressed="true">Todos</button><button class="filter" type="button" data-filter="incomplete" aria-pressed="false">Con vacíos</button><button class="filter" type="button" data-filter="duplicates" aria-pressed="false">Duplicados</button></div><div id="tableWrap" class="table-wrap"><p class="empty-state">Aquí podrás revisar una muestra de los registros del archivo.</p></div><p id="previewHelp" class="preview-help" hidden>Se muestran hasta 10 registros por filtro. Las celdas vacías aparecen resaltadas.</p></section>
+      <section class="panel" aria-labelledby="columns-title"><div class="panel-heading"><div><span class="section-index">03 / COMPLETITUD</span><h2 id="columns-title">Calidad por columna</h2></div><label class="sort-label">Ordenar <select id="sortSelect" class="sort-select" aria-label="Ordenar columnas"><option value="original">Original</option><option value="worst">Peores primero</option></select></label></div><div id="columnsList" class="columns-list"><p class="empty-state">Importa un archivo para visualizar el porcentaje de datos completos por columna.</p></div></section>
+      <section class="panel" aria-labelledby="preview-title"><div class="panel-heading"><div><span class="section-index">04 / REVISIÓN</span><h2 id="preview-title">Vista previa</h2></div><span id="previewCount" class="preview-count">Sin datos</span></div><div class="filters" role="group" aria-label="Filtrar registros"><button class="filter active" type="button" data-filter="all" aria-pressed="true">Todos</button><button class="filter" type="button" data-filter="incomplete" aria-pressed="false">Con vacíos</button><button class="filter" type="button" data-filter="duplicates" aria-pressed="false">Duplicados</button><button class="filter" type="button" data-filter="schema" id="schemaFilter" aria-pressed="false" hidden>Esquema</button></div><div id="tableWrap" class="table-wrap"><p class="empty-state">Aquí podrás revisar una muestra de los registros del archivo.</p></div><p id="previewHelp" class="preview-help" hidden>Se muestran hasta 10 registros por filtro. Las celdas vacías aparecen resaltadas.</p></section>
     </div>
+
+    <section class="panel schema-panel" id="schemaPanel" hidden aria-labelledby="schema-title">
+      <div class="panel-heading"><div><span class="section-index">05 / ESQUEMA</span><h2 id="schema-title">Validar contra tu esquema</h2></div></div>
+      <p class="schema-intro">Define las reglas que debe cumplir cada columna y comprueba el archivo contra ellas. El esquema se conserva entre cargas —ideal para validar cada mes el mismo reporte— y puedes descargarlo como JSON para reutilizarlo o compartirlo.</p>
+      <div class="schema-actions">
+        <button class="button button-primary" type="button" id="schemaValidate">Validar contra el esquema</button>
+        <button class="button button-secondary" type="button" id="schemaGenerate">Generar desde este archivo</button>
+        <button class="button button-ghost" type="button" id="schemaDownload">↓ Esquema JSON</button>
+        <button class="button button-ghost" type="button" id="schemaLoadBtn">Cargar esquema…</button>
+        <input type="file" id="schemaFile" accept=".json,application/json" hidden />
+        <button class="button button-ghost" type="button" id="schemaClear">Quitar reglas</button>
+      </div>
+      <div class="schema-scroll">
+        <table class="schema-table">
+          <thead><tr><th>Columna</th><th>Tipo esperado</th><th>Requerida</th><th>Única</th><th>Patrón (regex)</th><th>Mín.</th><th>Máx.</th><th>Long. mín.</th><th>Long. máx.</th><th>Valores permitidos (coma)</th><th>Violaciones</th></tr></thead>
+          <tbody id="schemaBody"></tbody>
+        </table>
+      </div>
+      <div class="relations-box"><div class="relations-head"><h3>Reglas entre columnas</h3><button class="button button-ghost" type="button" id="relationAdd">＋ Agregar regla</button></div><div id="relationsBody"></div><p class="relations-help">Comparan dos columnas fila a fila: que una fecha no sea anterior a otra, o que un total sea el precio por la cantidad. Las filas con algún lado vacío no se evalúan. En importes, las comparaciones admiten una diferencia de hasta 0,01 por redondeo.</p></div>
+      <p class="schema-summary" id="schemaSummary" hidden></p>
+    </section>
+    <section class="panel diff-panel" id="diffPanel" hidden aria-labelledby="diff-title">
+      <div class="panel-heading"><div><span class="section-index">06 / COMPARAR</span><h2 id="diff-title">Comparar con otro archivo</h2></div></div>
+      <p class="schema-intro">Sube la otra versión del mismo reporte (la del mes pasado, la corregida…) y reconcilia ambos por una columna clave: qué filas se agregaron, cuáles se eliminaron y qué celdas cambiaron.</p>
+      <div class="diff-controls">
+        <button class="button button-secondary" type="button" id="diffFileBtn">Elegir el otro archivo CSV…</button>
+        <input type="file" id="diffFile" accept=".csv,text/csv" hidden />
+        <span id="diffFileName" class="diff-file-name">Ningún archivo elegido</span>
+        <label>Columna clave <select id="diffKey" class="sort-select" aria-label="Columna clave para comparar"></select></label>
+        <button class="button button-primary" type="button" id="diffRun" disabled>Comparar</button>
+        <button class="button button-ghost" type="button" id="diffDownload" hidden>↓ Informe de diferencias CSV</button>
+      </div>
+      <div id="diffResult" class="diff-result" hidden></div>
+    </section>
     <footer class="footer"><span><b>DataCheck</b> · Proyecto académico de Inteligencia Artificial</span><span>Los archivos se procesan localmente; no se envían a un servidor.</span></footer>
   </main>
 </body>
